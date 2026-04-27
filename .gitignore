@@ -32,7 +32,6 @@ coverage/
 .ruff_cache/
 
 .idea/
-.vscode/
 *.swp
 *.swo
 *~

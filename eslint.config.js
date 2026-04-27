@@ -3,7 +3,17 @@ import tseslint from "typescript-eslint"
 import prettierConfig from "eslint-config-prettier"
 import prettierPlugin from "eslint-plugin-prettier"
 
-export default tseslint.config(
+import { defineConfig } from "eslint/config"
+
+export default defineConfig(
+    {
+        ignores: [
+            "dist/**",
+            "node_modules/**",
+            "coverage/**",
+            "prisma.ignore.config.ts",
+        ],
+    },
     eslint.configs.recommended,
     ...tseslint.configs.recommended,
     prettierConfig,
@@ -15,7 +25,7 @@ export default tseslint.config(
         languageOptions: {
             parser: tseslint.parser,
             parserOptions: {
-                project: "./tsconfig.json",
+                projectService: true,
                 sourceType: "module",
             },
         },
@@ -26,8 +36,5 @@ export default tseslint.config(
             "@typescript-eslint/no-explicit-any": "off",
             "prettier/prettier": "error",
         },
-    },
-    {
-        ignores: ["dist/", "node_modules/", "coverage/", "*.config.mjs"],
     },
 )

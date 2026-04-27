@@ -9,19 +9,19 @@ import {
     Post,
     Query,
 } from "@nestjs/common"
-import { PrismaService } from "../prisma/prisma.service"
-import { CommentEntity } from "./entities/comment.entity"
-import { LikeEntity } from "./entities/like.entity"
-import { PostEntity } from "./entities/post.entity"
-import { legacyModerationApi } from "./legacy-moderation.client"
+import { CommentEntity } from "@/posts/entities/comment.entity"
+import { LikeEntity } from "@/posts/entities/like.entity"
+import { PostEntity } from "@/posts/entities/post.entity"
+import { legacyModerationApi } from "@/posts/legacy-moderation.client"
+import { PrismaService } from "@/prisma/prisma.service"
 
-import { PostsService } from "./posts.service"
+import { PostsService } from "@/posts/posts.service"
 import {
     AddLikeDto,
     CreateCommentDto,
     CreatePostDto,
     FeedQueryDto,
-} from "./posts.dtos"
+} from "@/posts/posts.dtos"
 
 const logDomainEvent = (
     eventName: string,
