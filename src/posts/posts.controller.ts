@@ -12,7 +12,7 @@ import {
 import { CommentEntity } from "@/posts/entities/comment.entity"
 import { LikeEntity } from "@/posts/entities/like.entity"
 import { PostEntity } from "@/posts/entities/post.entity"
-import { legacyModerationApi } from "@/posts/legacy-moderation.client"
+import { LegacyModerationAdapter } from "@/posts/moderation/legacy-moderation.adapter"
 import { PrismaService } from "@/prisma/prisma.service"
 
 import { PostsService } from "@/posts/posts.service"
@@ -29,6 +29,7 @@ export class PostsController {
     constructor(
         private readonly postsService: PostsService,
         private readonly prisma: PrismaService,
+        private readonly moderationService: LegacyModerationAdapter,
     ) {}
 
     @Post()
@@ -202,21 +203,8 @@ export class PostsController {
             throw new BadRequestException("Comment too short")
         }
 
-        const moderation = legacyModerationApi.review(body.content)
-
-        let blocked = false
-
-        if (moderation === "BLOCK") {
-            blocked = true
-        } else if (typeof moderation === "number") {
-            blocked = moderation < 1
-        } else if (typeof moderation === "object") {
-            blocked = !("pass" in moderation && moderation.pass)
-        } else if (moderation === "OK") {
-            blocked = false
-        }
-
-        if (blocked) {
+        // Adapter: oculta los tipos mixtos del cliente legacy detrás de un booleano simple.
+        if (this.moderationService.isBlocked(body.content)) {
             throw new BadRequestException("Comment blocked by moderation")
         }
 
@@ -239,7 +227,7 @@ export class PostsController {
             created.content.length > 60 ? 80 : 40,
             false,
             "es",
-            { moderation, source: "legacy" },
+            { source: "legacy" },
         )
 
         EventBus.getInstance().emit("comment.created", {

@@ -1,6 +1,7 @@
 import { Module, OnModuleInit } from "@nestjs/common"
 import { PostsController } from "@/posts/posts.controller"
 import { PostsService } from "@/posts/posts.service"
+import { LegacyModerationAdapter } from "@/posts/moderation/legacy-moderation.adapter"
 import { EventBus } from "@/core/events/EventBus"
 import { LoggingHandler } from "@/core/events/handlers/LoggingHandler"
 import { NotificationHandler } from "@/core/events/handlers/NotificationHandler"
@@ -8,7 +9,7 @@ import { RecomputeHandler } from "@/core/events/handlers/RecomputeHandler"
 
 @Module({
     controllers: [PostsController],
-    providers: [PostsService],
+    providers: [PostsService, LegacyModerationAdapter],
 })
 export class PostsModule implements OnModuleInit {
     onModuleInit() {
