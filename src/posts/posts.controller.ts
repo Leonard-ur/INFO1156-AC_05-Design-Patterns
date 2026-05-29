@@ -22,6 +22,11 @@ import {
     CreatePostDto,
     FeedQueryDto,
 } from "@/posts/posts.dtos"
+import {
+    PostEntityBuilder,
+    CommentEntityBuilder,
+    LikeEntityBuilder,
+} from "@/posts/builders.index"
 
 const logDomainEvent = (
     eventName: string,
@@ -110,7 +115,6 @@ export class PostsController {
                 commentsCount * 3 -
                 Math.floor(hoursSinceCreated)
 
-            const tags = post.title.split(" ").filter((word) => word.length > 4)
             const metadata = {
                 likesWeights: post.likes.map((like) => like.weight),
                 commentLengths: post.comments.map(
@@ -119,22 +123,20 @@ export class PostsController {
                 hourOfCreate: new Date(post.createdAt).getHours(),
             }
 
-            return new PostEntity(
-                post.id,
-                post.title,
-                post.description,
-                post.imageUrl,
-                post.createdAt,
-                post.updatedAt,
-                likesCount,
-                commentsCount,
-                relevanceScore,
-                relevanceScore > 20,
-                "feed-controller",
-                tags,
-                metadata,
-                mode,
-            )
+            return new PostEntityBuilder()
+                .withId(post.id)
+                .withTitle(post.title)
+                .withDescription(post.description)
+                .withImageUrl(post.imageUrl)
+                .withCreatedAt(post.createdAt)
+                .withUpdatedAt(post.updatedAt)
+                .withLikesCount(likesCount)
+                .withCommentsCount(commentsCount)
+                .withRelevanceScore(relevanceScore)
+                .withSource("feed-controller")
+                .withMetadata(metadata)
+                .withRankingMode(mode)
+                .build()
         })
 
         let sorted = [...mappedPosts]
@@ -188,19 +190,20 @@ export class PostsController {
 
         const entities = comments.map(
             (comment) =>
-                new CommentEntity(
-                    comment.id,
-                    comment.postId,
-                    comment.content,
-                    comment.createdAt,
-                    comment.updatedAt,
-                    comment.source,
-                    "approved",
-                    comment.content.length > 80 ? 70 : 45,
-                    comment.content.length % 2 === 0,
-                    "es",
-                    { chars: comment.content.length, source: comment.source },
-                ),
+                new CommentEntityBuilder()
+                    .withId(comment.id)
+                    .withPostId(comment.postId)
+                    .withContent(comment.content)
+                    .withCreatedAt(comment.createdAt)
+                    .withUpdatedAt(comment.updatedAt)
+                    .withSource(comment.source)
+                    .withModerationState("approved")
+                    .withLanguage("es")
+                    .withMetadata({
+                        chars: comment.content.length,
+                        source: comment.source,
+                    })
+                    .build(),
         )
 
         return {
@@ -251,19 +254,17 @@ export class PostsController {
             },
         })
 
-        const entity = new CommentEntity(
-            created.id,
-            created.postId,
-            created.content,
-            created.createdAt,
-            created.updatedAt,
-            created.source,
-            "approved",
-            created.content.length > 60 ? 80 : 40,
-            false,
-            "es",
-            { moderation, source: "legacy" },
-        )
+        const entity = new CommentEntityBuilder()
+            .withId(created.id)
+            .withPostId(created.postId)
+            .withContent(created.content)
+            .withCreatedAt(created.createdAt)
+            .withUpdatedAt(created.updatedAt)
+            .withSource(created.source)
+            .withModerationState("approved")
+            .withLanguage("es")
+            .withMetadata({ moderation, source: "legacy" })
+            .build()
 
         logDomainEvent("comment.created", { postId: id, commentId: created.id })
         fakeSendNotification("comment", { postId: id })
@@ -301,17 +302,16 @@ export class PostsController {
             },
         })
 
-        const entity = new LikeEntity(
-            like.id,
-            like.postId,
-            like.reactionType,
-            like.weight,
-            like.source,
-            like.createdAt,
-            like.weight > 2 ? "strong" : "normal",
-            true,
-            { from: "manual", r: like.reactionType },
-        )
+        const entity = new LikeEntityBuilder()
+            .withId(like.id)
+            .withPostId(like.postId)
+            .withReactionType(like.reactionType)
+            .withWeight(like.weight)
+            .withSource(like.source)
+            .withCreatedAt(like.createdAt)
+            .withShouldAffectRelevanceScore(true)
+            .withMetadata({ from: "manual", r: like.reactionType })
+            .build()
 
         logDomainEvent("like.created", { postId: id, likeId: like.id })
         fakeSendNotification("like", { postId: id, reactionType })
