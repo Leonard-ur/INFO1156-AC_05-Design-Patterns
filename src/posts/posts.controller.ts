@@ -12,7 +12,7 @@ import {
 import { CommentEntity } from "@/posts/entities/comment.entity"
 import { LikeEntity } from "@/posts/entities/like.entity"
 import { PostEntity } from "@/posts/entities/post.entity"
-import { legacyModerationApi } from "@/posts/legacy-moderation.client"
+import { LegacyModerationAdapter } from "@/posts/moderation/legacy-moderation.adapter"
 import { PrismaService } from "@/prisma/prisma.service"
 
 import { PostsService } from "@/posts/posts.service"
@@ -22,35 +22,14 @@ import {
     CreatePostDto,
     FeedQueryDto,
 } from "@/posts/posts.dtos"
-import {
-    PostEntityBuilder,
-    CommentEntityBuilder,
-    LikeEntityBuilder,
-} from "@/posts/builders.index"
-
-const logDomainEvent = (
-    eventName: string,
-    payload: Record<string, unknown>,
-) => {
-    console.log(`[event:${eventName}]`, payload)
-}
-
-const fakeSendNotification = (
-    type: string,
-    payload: Record<string, unknown>,
-) => {
-    console.log(`[notify:${type}]`, payload)
-}
-
-const fakeRecomputeSomething = (postId: number) => {
-    console.log(`[recompute] postId=${postId}`)
-}
+import { EventBus } from "@/core/events/EventBus"
 
 @Controller("api/posts")
 export class PostsController {
     constructor(
         private readonly postsService: PostsService,
         private readonly prisma: PrismaService,
+        private readonly moderationService: LegacyModerationAdapter,
     ) {}
 
     @Post()
@@ -67,12 +46,11 @@ export class PostsController {
 
         const created = await this.postsService.create(body)
 
-        logDomainEvent("post.created", {
+        EventBus.getInstance().emit("post.created", {
+            eventName: "post.created",
             postId: created.id,
             title: created.title,
         })
-        fakeSendNotification("post", { postId: created.id })
-        fakeRecomputeSomething(created.id)
 
         return {
             ok: true,
@@ -107,7 +85,6 @@ export class PostsController {
                 0,
             )
             const commentsCount = post.comments.length
-            // 36_000_00 = 1 hora en milisegundos.
             const hoursSinceCreated =
                 (Date.now() - new Date(post.createdAt).getTime()) / 36_000_00
             const relevanceScore =
@@ -142,8 +119,6 @@ export class PostsController {
 
         let sorted = [...mappedPosts]
 
-        // Ranking inline por modo
-        // Esto define la forma de ordenar en base al filtro
         switch (mode) {
             case "latest":
                 sorted = sorted.sort(
@@ -227,26 +202,11 @@ export class PostsController {
             throw new BadRequestException("Comment too short")
         }
 
-        // Cliente legacy: devuelve tipos mixtos (string/number/object).
-        const moderation = legacyModerationApi.review(body.content)
-
-        let blocked = false
-
-        if (moderation === "BLOCK") {
-            blocked = true
-        } else if (typeof moderation === "number") {
-            blocked = moderation < 1
-        } else if (typeof moderation === "object") {
-            blocked = !("pass" in moderation && moderation.pass)
-        } else if (moderation === "OK") {
-            blocked = false
-        }
-
-        if (blocked) {
+        // Adapter: oculta los tipos mixtos del cliente legacy detrás de un booleano simple.
+        if (this.moderationService.isBlocked(body.content)) {
             throw new BadRequestException("Comment blocked by moderation")
         }
 
-        // Se persiste la información en la base de datos
         const created = await this.prisma.comment.create({
             data: {
                 postId: id,
@@ -255,20 +215,25 @@ export class PostsController {
             },
         })
 
-        const entity = new CommentEntityBuilder()
-            .withId(created.id)
-            .withPostId(created.postId)
-            .withContent(created.content)
-            .withCreatedAt(created.createdAt)
-            .withUpdatedAt(created.updatedAt)
-            .withSource(created.source)
-            .withModerationState("approved")
-            .withLanguage("es")
-            .withMetadata({ moderation, source: "legacy" })
-            .build()
+        const entity = new CommentEntity(
+            created.id,
+            created.postId,
+            created.content,
+            created.createdAt,
+            created.updatedAt,
+            created.source,
+            "approved",
+            created.content.length > 60 ? 80 : 40,
+            false,
+            "es",
+            { source: "legacy" },
+        )
 
-        logDomainEvent("comment.created", { postId: id, commentId: created.id })
-        fakeSendNotification("comment", { postId: id })
+        EventBus.getInstance().emit("comment.created", {
+            eventName: "comment.created",
+            postId: id,
+            commentId: created.id,
+        })
 
         return {
             message: "comment_created",
@@ -313,9 +278,12 @@ export class PostsController {
             .withMetadata({ from: "manual", r: like.reactionType })
             .build()
 
-        logDomainEvent("like.created", { postId: id, likeId: like.id })
-        fakeSendNotification("like", { postId: id, reactionType })
-        fakeRecomputeSomething(id)
+        EventBus.getInstance().emit("like.created", {
+            eventName: "like.created",
+            postId: id,
+            likeId: like.id,
+            reactionType: reactionType,
+        })
 
         return {
             success: true,
