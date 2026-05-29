@@ -9,9 +9,9 @@ import {
     Post,
     Query,
 } from "@nestjs/common"
-import { CommentEntity } from "@/posts/entities/comment.entity"
-import { LikeEntity } from "@/posts/entities/like.entity"
-import { PostEntity } from "@/posts/entities/post.entity"
+import { CommentEntity, CommentEntityBuilder } from "@/posts/entities/comment.entity"
+import { LikeEntity, LikeEntityBuilder } from "@/posts/entities/like.entity"
+import { PostEntity, PostEntityBuilder } from "@/posts/entities/post.entity"
 import { LegacyModerationAdapter } from "@/posts/moderation/legacy-moderation.adapter"
 import { PrismaService } from "@/prisma/prisma.service"
 
@@ -23,6 +23,9 @@ import {
     FeedQueryDto,
 } from "@/posts/posts.dtos"
 import { EventBus } from "@/core/events/EventBus"
+
+// Tu importación del Factory
+import { FeedSortFactory } from "./strategies/feed-sort.factory"
 
 @Controller("api/posts")
 export class PostsController {
@@ -114,36 +117,10 @@ export class PostsController {
                 .withMetadata(metadata)
                 .withRankingMode(mode)
                 .build()
-
         })
 
-        let sorted = [...mappedPosts]
-
-        switch (mode) {
-            case "latest":
-                sorted = sorted.sort(
-                    (a, b) => b.createdAt.getTime() - a.createdAt.getTime(),
-                )
-                break
-            case "mostLiked":
-                sorted = sorted.sort((a, b) => b.likesCount - a.likesCount)
-                break
-            case "mostCommented":
-                sorted = sorted.sort(
-                    (a, b) => b.commentsCount - a.commentsCount,
-                )
-                break
-            case "relevance":
-                sorted = sorted.sort(
-                    (a, b) => b.relevanceScore - a.relevanceScore,
-                )
-                break
-            default:
-                sorted = sorted.sort(
-                    (a, b) => b.createdAt.getTime() - a.createdAt.getTime(),
-                )
-                break
-        }
+        const strategy = FeedSortFactory.getStrategy(mode)
+        const sorted = strategy.sort(mappedPosts)
 
         return {
             mode,
@@ -159,6 +136,7 @@ export class PostsController {
             throw new NotFoundException("Post not found")
         }
 
+        // CORREGIDO: Se removió el duplicado 'prisma.prisma'
         const comments = await this.prisma.comment.findMany({
             where: { postId: id },
             orderBy: { createdAt: "desc" },
@@ -202,7 +180,6 @@ export class PostsController {
             throw new BadRequestException("Comment too short")
         }
 
-        // Adapter: oculta los tipos mixtos del cliente legacy detrás de un booleano simple.
         if (this.moderationService.isBlocked(body.content)) {
             throw new BadRequestException("Comment blocked by moderation")
         }
@@ -215,19 +192,18 @@ export class PostsController {
             },
         })
 
-        const entity = new CommentEntity(
-            created.id,
-            created.postId,
-            created.content,
-            created.createdAt,
-            created.updatedAt,
-            created.source,
-            "approved",
-            created.content.length > 60 ? 80 : 40,
-            false,
-            "es",
-            { source: "legacy" },
-        )
+        // CORREGIDO: Migrado a Builder para evitar conflictos de firmas con los tipos del equipo
+        const entity = new CommentEntityBuilder()
+            .withId(created.id)
+            .withPostId(created.postId)
+            .withContent(created.content)
+            .withCreatedAt(created.createdAt)
+            .withUpdatedAt(created.updatedAt)
+            .withSource(created.source)
+            .withModerationState("approved")
+            .withLanguage("es")
+            .withMetadata({ source: "legacy" })
+            .build()
 
         EventBus.getInstance().emit("comment.created", {
             eventName: "comment.created",
@@ -291,9 +267,3 @@ export class PostsController {
         }
     }
 }
-
-
-
-
-
-
