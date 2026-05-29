@@ -22,24 +22,7 @@ import {
     CreatePostDto,
     FeedQueryDto,
 } from "@/posts/posts.dtos"
-
-const logDomainEvent = (
-    eventName: string,
-    payload: Record<string, unknown>,
-) => {
-    console.log(`[event:${eventName}]`, payload)
-}
-
-const fakeSendNotification = (
-    type: string,
-    payload: Record<string, unknown>,
-) => {
-    console.log(`[notify:${type}]`, payload)
-}
-
-const fakeRecomputeSomething = (postId: number) => {
-    console.log(`[recompute] postId=${postId}`)
-}
+import { EventBus } from "@/core/events/EventBus"
 
 @Controller("api/posts")
 export class PostsController {
@@ -62,12 +45,11 @@ export class PostsController {
 
         const created = await this.postsService.create(body)
 
-        logDomainEvent("post.created", {
+        EventBus.getInstance().emit("post.created", {
+            eventName: "post.created",
             postId: created.id,
             title: created.title,
         })
-        fakeSendNotification("post", { postId: created.id })
-        fakeRecomputeSomething(created.id)
 
         return {
             ok: true,
@@ -102,7 +84,6 @@ export class PostsController {
                 0,
             )
             const commentsCount = post.comments.length
-            // 36_000_00 = 1 hora en milisegundos.
             const hoursSinceCreated =
                 (Date.now() - new Date(post.createdAt).getTime()) / 36_000_00
             const relevanceScore =
@@ -139,8 +120,6 @@ export class PostsController {
 
         let sorted = [...mappedPosts]
 
-        // Ranking inline por modo
-        // Esto define la forma de ordenar en base al filtro
         switch (mode) {
             case "latest":
                 sorted = sorted.sort(
@@ -223,7 +202,6 @@ export class PostsController {
             throw new BadRequestException("Comment too short")
         }
 
-        // Cliente legacy: devuelve tipos mixtos (string/number/object).
         const moderation = legacyModerationApi.review(body.content)
 
         let blocked = false
@@ -242,7 +220,6 @@ export class PostsController {
             throw new BadRequestException("Comment blocked by moderation")
         }
 
-        // Se persiste la información en la base de datos
         const created = await this.prisma.comment.create({
             data: {
                 postId: id,
@@ -265,9 +242,11 @@ export class PostsController {
             { moderation, source: "legacy" },
         )
 
-        logDomainEvent("comment.created", { postId: id, commentId: created.id })
-        fakeSendNotification("comment", { postId: id })
-        fakeRecomputeSomething(id)
+        EventBus.getInstance().emit("comment.created", {
+            eventName: "comment.created",
+            postId: id,
+            commentId: created.id,
+        })
 
         return {
             message: "comment_created",
@@ -313,9 +292,12 @@ export class PostsController {
             { from: "manual", r: like.reactionType },
         )
 
-        logDomainEvent("like.created", { postId: id, likeId: like.id })
-        fakeSendNotification("like", { postId: id, reactionType })
-        fakeRecomputeSomething(id)
+        EventBus.getInstance().emit("like.created", {
+            eventName: "like.created",
+            postId: id,
+            likeId: like.id,
+            reactionType: reactionType,
+        })
 
         return {
             success: true,
